@@ -34,10 +34,12 @@ jobs:
           head -n 20 translated_ids_yakamoz.json || echo "File not found"
 
       - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           [ -f translatedsample_yakamoz.xml ] && git add translatedsample_yakamoz.xml
           [ -f translated_ids_yakamoz.json ] && git add translated_ids_yakamoz.json
           git commit -m "🔄 Auto-update translated Moda Yakamoz XML [bot]" || echo "No changes to commit"
-          git push || echo "Nothing to push"
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:${{ github.ref_name }} || echo "Nothing to push"
