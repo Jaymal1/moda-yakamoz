@@ -1,11 +1,27 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
+name: Translate Moda Yakamoz XML Feed
 
-# Virtual Environments
-venv/
-env/
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # every 4 hours
+  workflow_dispatch:      # allows manual run from GitHub Actions tab
 
-# macOS
-.DS_Store
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Moda Yakamoz XML translation
+      run: python translatexml_yakamoz.py
