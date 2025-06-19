@@ -2,37 +2,42 @@ name: Translate Moda Yakamoz XML Feed
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Every 4 hours
-  workflow_dispatch:        # Allow manual trigger
+    - cron: "0 */4 * * *"  # Runs every 4 hours
+  workflow_dispatch:
 
 jobs:
   translate:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        persist-credentials: true  # Required to push
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
 
-    - name: Run Moda Yakamoz XML translation
-      run: python translatexml_yakamoz.py
+      - name: Run translation script
+        run: python translatexml_yakamoz.py
 
-    - name: Commit and push changes
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add translatedsample_yakamoz.xml translated_ids_yakamoz.json
-        git commit -m "🔄 Auto-update translated Moda Yakamoz XML [bot]" || echo "No changes to commit"
-        git push
+      - name: Check output files
+        run: |
+          ls -lh
+          echo "--- Content of translatedsample_yakamoz.xml ---"
+          head -n 20 translatedsample_yakamoz.xml || echo "File not found"
+          echo "--- Content of translated_ids_yakamoz.json ---"
+          head -n 20 translated_ids_yakamoz.json || echo "File not found"
 
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          [ -f translatedsample_yakamoz.xml ] && git add translatedsample_yakamoz.xml
+          [ -f translated_ids_yakamoz.json ] && git add translated_ids_yakamoz.json
+          git commit -m "🔄 Auto-update translated Moda Yakamoz XML [bot]" || echo "No changes to commit"
+          git push || echo "Nothing to push"
