@@ -2,8 +2,8 @@ name: Translate Moda Yakamoz XML Feed
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # every 4 hours
-  workflow_dispatch:      # allows manual run from GitHub Actions tab
+    - cron: '0 */4 * * *'  # Every 4 hours
+  workflow_dispatch:        # Allow manual trigger
 
 jobs:
   translate:
@@ -12,6 +12,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+      with:
+        persist-credentials: true  # Required to push
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -25,3 +27,11 @@ jobs:
 
     - name: Run Moda Yakamoz XML translation
       run: python translatexml_yakamoz.py
+
+    - name: Commit and push changes
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add translatedsample_yakamoz.xml translated_ids_yakamoz.json
+        git commit -m "🔄 Auto-update translated Moda Yakamoz XML [bot]" || echo "No changes to commit"
+        git push
