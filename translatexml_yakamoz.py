@@ -47,7 +47,7 @@ def save_translated_ids(ids):
 def get_retry_session():
     retry_strategy = Retry(
         total=5,
-        backoff_factor=1,
+        backoff_factor=10,  # wait longer between retries
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"]
     )
@@ -61,7 +61,7 @@ def get_retry_session():
 def parse_large_xml():
     session = get_retry_session()
     try:
-        response = session.get(XML_URL, stream=True, timeout=10)
+        response = session.get(XML_URL, stream=True, timeout=900)  # 15 minutes timeout
         response.raise_for_status()
         for event, elem in ET.iterparse(response.raw, events=('end',)):
             if elem.tag == 'Urun':
@@ -77,30 +77,42 @@ def process_and_save_translated_xml():
     translated_ids = load_translated_ids()
     updated_ids = set(translated_ids)
 
-    # Load previous output if exists
+    # Load previous output if exists, else create root and Urunler element
     if os.path.exists(OUTPUT_FILE):
         tree = ET.parse(OUTPUT_FILE)
         root_out = tree.getroot()
+        urunler_out = root_out.find("Urunler")
+        if urunler_out is None:
+            urunler_out = ET.SubElement(root_out, "Urunler")
     else:
         root_out = ET.Element("Root")
-        ET.SubElement(root_out, "Urunler")
+        urunler_out = ET.SubElement(root_out, "Urunler")
 
-    # Create dict for existing products by Barkod
-    existing_products = {}
-    for urun in root_out.find("Urunler") or []:
+    # Collect existing Barkods to prevent duplicates
+    existing_barkods = set()
+    for urun in urunler_out.findall("Urun"):
         for secenek in urun.findall(".//Secenek"):
             barkod = secenek.findtext("Barkod")
             if barkod:
-                existing_products[barkod] = urun
+                existing_barkods.add(barkod)
 
-    # Prepare new XML output tree
+    # Prepare new XML root and Urunler
     new_root = ET.Element("Root")
     new_urunler = ET.SubElement(new_root, "Urunler")
 
+    processed_count = 0  # count products processed this run
+
+    # Process new products from XML
     for urun in parse_large_xml() or []:
-        updated_urun = ET.Element("Urun")
         varyasyon_id = urun.findtext("UrunSecenek/Secenek/VaryasyonID")
         translate_this = varyasyon_id and varyasyon_id not in translated_ids
+
+        barkods = [s.findtext("Barkod") for s in urun.findall(".//Secenek")]
+        if any(b in existing_barkods for b in barkods):
+            # skip duplicates
+            continue
+
+        updated_urun = ET.Element("Urun")
 
         # Translate main tags
         for tag in urun:
@@ -110,7 +122,7 @@ def process_and_save_translated_xml():
             else:
                 ET.SubElement(updated_urun, tag.tag).text = tag.text
 
-        # Translate Secenekler
+        # Translate Secenekler and convert price
         secenekler_in = urun.find("UrunSecenek")
         if secenekler_in is not None:
             secenek_out = ET.SubElement(updated_urun, "UrunSecenek")
@@ -124,29 +136,28 @@ def process_and_save_translated_xml():
                             ET.SubElement(new_secenek, "SatisFiyati").text = str(price_usd)
                         except:
                             ET.SubElement(new_secenek, "SatisFiyati").text = s_tag.text
-                    elif s_tag.tag == "StokAdedi":
-                        ET.SubElement(new_secenek, "StokAdedi").text = s_tag.text
                     else:
                         ET.SubElement(new_secenek, s_tag.tag).text = s_tag.text
 
-        # Add ID to list if newly translated
+        # Add ID if newly translated
         if translate_this:
             updated_ids.add(varyasyon_id)
 
-        # Avoid duplicates
-        barkods = [s.findtext("Barkod") for s in urun.findall(".//Secenek")]
-        existing = any(barkod in existing_products for barkod in barkods)
-        if not existing:
-            new_urunler.append(updated_urun)
+        # Append processed product
+        new_urunler.append(updated_urun)
+        processed_count += 1
+
+    if processed_count == 0:
+        print("[WARNING] No new products processed. Skipping XML write to avoid empty output.")
+        return
 
     # Append old products not updated
-    if os.path.exists(OUTPUT_FILE):
-        for urun in root_out.find("Urunler"):
-            varyasyon_id = urun.findtext("UrunSecenek/Secenek/VaryasyonID")
-            if varyasyon_id not in updated_ids:
-                new_urunler.append(urun)
+    for urun in urunler_out.findall("Urun"):
+        varyasyon_id = urun.findtext("UrunSecenek/Secenek/VaryasyonID")
+        if varyasyon_id not in updated_ids:
+            new_urunler.append(urun)
 
-    # Write result
+    # Write the output XML
     tree_out = ET.ElementTree(new_root)
     tree_out.write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
 
