@@ -16,49 +16,43 @@ def pretty_print_xml(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             raw_xml = f.read()
-        # Parse to DOM and pretty print
         dom = xml.dom.minidom.parseString(raw_xml)
         pretty_xml_as_str = dom.toprettyxml(indent="  ")
         print("Pretty printed XML preview (first 500 chars):")
-        print(pretty_xml_as_str[:500])  # limit output length
+        print(pretty_xml_as_str[:500])
     except Exception as e:
         print(f"[ERROR] Pretty print failed: {e}")
 
-# Get exchange rate
 def get_exchange_rate():
     try:
         res = requests.get(EXCHANGE_RATE_API, timeout=10)
         res.raise_for_status()
-        return res.json()['rates']['USD']
+        data = res.json()
+        print("[INFO] Exchange rate response:", data)
+        return data['rates']['USD']
     except Exception as e:
         print(f"[WARNING] Using fallback exchange rate due to error: {e}")
-        return 0.031  # fallback default
+        return 0.031
 
-# Translate text using Google Translator
 def translate_text(text):
     try:
         return GoogleTranslator(source='tr', target='en').translate(text)
     except Exception as e:
         print(f"[WARNING] Translation failed: {e}")
-        return text  # fallback: return original
+        return text
 
-# Load already translated products
 def load_translated_ids():
     if os.path.exists(TRANSLATED_IDS_FILE):
         with open(TRANSLATED_IDS_FILE, 'r') as f:
             return set(json.load(f))
     return set()
 
-# Save updated translated product IDs
 def save_translated_ids(ids):
     with open(TRANSLATED_IDS_FILE, 'w') as f:
         json.dump(list(ids), f)
 
-# Parse local XML file instead of fetching
 def parse_local_xml():
-    # Pretty print for debugging BEFORE parsing
     pretty_print_xml(RAW_XML_FILE)
-
     try:
         context = ET.iterparse(RAW_XML_FILE, events=('end',))
         for event, elem in context:
@@ -69,13 +63,11 @@ def parse_local_xml():
         print(f"[ERROR] Failed to parse local XML: {e}")
         return
 
-# Main translation and sync function
 def process_and_save_translated_xml():
     usd_rate = get_exchange_rate()
     translated_ids = load_translated_ids()
     updated_ids = set(translated_ids)
 
-    # Load previous output if exists, else create root and Urunler element
     if os.path.exists(OUTPUT_FILE):
         tree = ET.parse(OUTPUT_FILE)
         root_out = tree.getroot()
@@ -86,7 +78,6 @@ def process_and_save_translated_xml():
         root_out = ET.Element("Root")
         urunler_out = ET.SubElement(root_out, "Urunler")
 
-    # Collect existing Barkods to prevent duplicates
     existing_barkods = set()
     for urun in urunler_out.findall("Urun"):
         for secenek in urun.findall(".//Secenek"):
@@ -94,24 +85,20 @@ def process_and_save_translated_xml():
             if barkod:
                 existing_barkods.add(barkod)
 
-    # Prepare new XML root and Urunler
     new_root = ET.Element("Root")
     new_urunler = ET.SubElement(new_root, "Urunler")
-
     processed_count = 0
 
-    # Process new products from local XML
     for urun in parse_local_xml() or []:
         varyasyon_id = urun.findtext("UrunSecenek/Secenek/VaryasyonID")
         translate_this = varyasyon_id and varyasyon_id not in translated_ids
 
         barkods = [s.findtext("Barkod") for s in urun.findall(".//Secenek")]
         if any(b in existing_barkods for b in barkods):
-            continue  # skip duplicates
+            continue
 
         updated_urun = ET.Element("Urun")
 
-        # Translate main tags
         for tag in urun:
             if tag.tag in ['UrunAdi', 'Aciklama', 'MateryalBileseni'] and translate_this:
                 translated = translate_text(tag.text or '')
@@ -119,14 +106,16 @@ def process_and_save_translated_xml():
             else:
                 ET.SubElement(updated_urun, tag.tag).text = tag.text
 
-        # Translate Secenekler and convert price
         secenekler_in = urun.find("UrunSecenek")
         if secenekler_in is not None:
             secenek_out = ET.SubElement(updated_urun, "UrunSecenek")
             for secenek in secenekler_in.findall("Secenek"):
                 new_secenek = ET.SubElement(secenek_out, "Secenek")
                 for s_tag in secenek:
-                    if s_tag.tag == "SatisFiyati":
+                    if s_tag.tag in ["EkSecenekOzellik", "ozellik"] and translate_this:
+                        translated_value = translate_text(s_tag.text or '')
+                        ET.SubElement(new_secenek, s_tag.tag).text = translated_value
+                    elif s_tag.tag == "SatisFiyati":
                         try:
                             price_try = float(s_tag.text)
                             price_usd = round(price_try * usd_rate, 2)
@@ -146,17 +135,14 @@ def process_and_save_translated_xml():
         print("[WARNING] No new products processed. Skipping XML write to avoid empty output.")
         return
 
-    # Append old products not updated
     for urun in urunler_out.findall("Urun"):
         varyasyon_id = urun.findtext("UrunSecenek/Secenek/VaryasyonID")
         if varyasyon_id not in updated_ids:
             new_urunler.append(urun)
 
-    # Save final output
     tree_out = ET.ElementTree(new_root)
     tree_out.write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
 
-    # Save updated translated IDs
     save_translated_ids(updated_ids)
 
 if __name__ == "__main__":
