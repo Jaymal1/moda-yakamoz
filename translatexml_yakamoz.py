@@ -1,14 +1,12 @@
 import xml.etree.ElementTree as ET
-import requests
 import os
 import json
 from datetime import datetime
 from deep_translator import GoogleTranslator
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import requests
 
 # Constants
-XML_URL = "https://modayakamoz.com/xml/yalin1"
+RAW_XML_FILE = "moda_raw.xml"
 OUTPUT_FILE = "translatedsample_yakamoz.xml"
 TRANSLATED_IDS_FILE = "translated_ids_yakamoz.json"
 EXCHANGE_RATE_API = "https://api.exchangerate.host/latest?base=TRY&symbols=USD"
@@ -43,32 +41,16 @@ def save_translated_ids(ids):
     with open(TRANSLATED_IDS_FILE, 'w') as f:
         json.dump(list(ids), f)
 
-# Session with retry strategy
-def get_retry_session():
-    retry_strategy = Retry(
-        total=5,
-        backoff_factor=10,  # wait longer between retries
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"]
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session = requests.Session()
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
-
-# Parse XML with retry and timeout
-def parse_large_xml():
-    session = get_retry_session()
+# Parse local XML file instead of fetching
+def parse_local_xml():
     try:
-        response = session.get(XML_URL, stream=True, timeout=900)  # 15 minutes timeout
-        response.raise_for_status()
-        for event, elem in ET.iterparse(response.raw, events=('end',)):
+        context = ET.iterparse(RAW_XML_FILE, events=('end',))
+        for event, elem in context:
             if elem.tag == 'Urun':
                 yield elem
                 elem.clear()
     except Exception as e:
-        print(f"[ERROR] Failed to fetch or parse XML: {e}")
+        print(f"[ERROR] Failed to parse local XML: {e}")
         return
 
 # Main translation and sync function
@@ -100,17 +82,16 @@ def process_and_save_translated_xml():
     new_root = ET.Element("Root")
     new_urunler = ET.SubElement(new_root, "Urunler")
 
-    processed_count = 0  # count products processed this run
+    processed_count = 0
 
-    # Process new products from XML
-    for urun in parse_large_xml() or []:
+    # Process new products from local XML
+    for urun in parse_local_xml() or []:
         varyasyon_id = urun.findtext("UrunSecenek/Secenek/VaryasyonID")
         translate_this = varyasyon_id and varyasyon_id not in translated_ids
 
         barkods = [s.findtext("Barkod") for s in urun.findall(".//Secenek")]
         if any(b in existing_barkods for b in barkods):
-            # skip duplicates
-            continue
+            continue  # skip duplicates
 
         updated_urun = ET.Element("Urun")
 
@@ -139,11 +120,9 @@ def process_and_save_translated_xml():
                     else:
                         ET.SubElement(new_secenek, s_tag.tag).text = s_tag.text
 
-        # Add ID if newly translated
         if translate_this:
             updated_ids.add(varyasyon_id)
 
-        # Append processed product
         new_urunler.append(updated_urun)
         processed_count += 1
 
@@ -157,11 +136,11 @@ def process_and_save_translated_xml():
         if varyasyon_id not in updated_ids:
             new_urunler.append(urun)
 
-    # Write the output XML
+    # Save final output
     tree_out = ET.ElementTree(new_root)
     tree_out.write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
 
-    # Save translated IDs
+    # Save updated translated IDs
     save_translated_ids(updated_ids)
 
 if __name__ == "__main__":
