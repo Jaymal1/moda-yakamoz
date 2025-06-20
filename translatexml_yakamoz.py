@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+import xml.dom.minidom
 import os
 import json
 from datetime import datetime
@@ -10,6 +11,18 @@ RAW_XML_FILE = "modayakamoz_raw.xml"
 OUTPUT_FILE = "translatedsample_yakamoz.xml"
 TRANSLATED_IDS_FILE = "translated_ids_yakamoz.json"
 EXCHANGE_RATE_API = "https://api.exchangerate.host/latest?base=TRY&symbols=USD"
+
+def pretty_print_xml(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            raw_xml = f.read()
+        # Parse to DOM and pretty print
+        dom = xml.dom.minidom.parseString(raw_xml)
+        pretty_xml_as_str = dom.toprettyxml(indent="  ")
+        print("Pretty printed XML preview (first 500 chars):")
+        print(pretty_xml_as_str[:500])  # limit output length
+    except Exception as e:
+        print(f"[ERROR] Pretty print failed: {e}")
 
 # Get exchange rate
 def get_exchange_rate():
@@ -43,6 +56,9 @@ def save_translated_ids(ids):
 
 # Parse local XML file instead of fetching
 def parse_local_xml():
+    # Pretty print for debugging BEFORE parsing
+    pretty_print_xml(RAW_XML_FILE)
+
     try:
         context = ET.iterparse(RAW_XML_FILE, events=('end',))
         for event, elem in context:
