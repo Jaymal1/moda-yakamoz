@@ -6,7 +6,7 @@ from deep_translator import GoogleTranslator
 import requests
 
 # Constants
-RAW_XML_FILE = "moda_raw.xml"
+RAW_XML_FILE = "modayakamoz_raw.xml"
 OUTPUT_FILE = "translatedsample_yakamoz.xml"
 TRANSLATED_IDS_FILE = "translated_ids_yakamoz.json"
 EXCHANGE_RATE_API = "https://api.exchangerate.host/latest?base=TRY&symbols=USD"
