@@ -9,9 +9,13 @@ with sync_playwright() as p:
     try:
         page.goto(XML_URL, timeout=1200000, wait_until="domcontentloaded")  # 20 minutes
         print("✅ Loaded! Saving content...")
-        content = page.content()
+
+        # Extract the real XML inside the <pre> tag or raw body text
+        content = page.evaluate("document.body.innerText")
+
         with open("modayakamoz_raw.xml", "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write(content.strip())
+
         print("✅ Saved to modayakamoz_raw.xml")
     except Exception as e:
         print(f"❌ Error: {e}")
