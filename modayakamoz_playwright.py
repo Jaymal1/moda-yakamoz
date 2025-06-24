@@ -5,19 +5,23 @@ XML_URL = "https://modayakamoz.com/xml/yalin1"
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
-    print("Navigating to the XML URL...")
+    print("🌍 Navigating to the XML URL...")
+
     try:
-        page.goto(XML_URL, timeout=1200000, wait_until="domcontentloaded")  # 20 minutes
-        print("✅ Loaded! Saving content...")
+        page.goto(XML_URL, timeout=1200000, wait_until="domcontentloaded")  # Wait up to 20 min
+        print("✅ Page loaded. Extracting raw XML text...")
 
-        # Extract the real XML inside the <pre> tag or raw body text
-        content = page.evaluate("document.body.innerText")
+        # Only extract raw XML as string (avoid HTML parsing)
+        content = page.evaluate("() => document.body.innerText")
 
+        # Save to file
         with open("modayakamoz_raw.xml", "w", encoding="utf-8") as f:
-            f.write(content.strip())
+            f.write(content)
 
-        print("✅ Saved to modayakamoz_raw.xml")
+        print("✅ XML saved to modayakamoz_raw.xml")
+
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Playwright error: {e}")
+
     finally:
         browser.close()
