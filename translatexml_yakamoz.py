@@ -174,6 +174,7 @@
 
 
 import xml.etree.ElementTree as ET
+import xml.dom.minidom
 import os
 import json
 from datetime import datetime
@@ -207,7 +208,7 @@ def get_exchange_rate():
         return rate
     except Exception as e:
         print(f"[WARNING] Using fallback exchange rate due to error: {e}")
-        return 0.031  # fallback
+        return 0.031
 
 def translate_text(text):
     if not text or text.strip() == "":
@@ -253,7 +254,6 @@ def process_and_save_translated_xml():
     translated_ids = load_translated_ids()
     updated_ids = set(translated_ids)
 
-    # Load existing output or create new root
     if os.path.exists(OUTPUT_FILE):
         try:
             tree = ET.parse(OUTPUT_FILE)
@@ -288,32 +288,33 @@ def process_and_save_translated_xml():
 
         updated_urun = ET.Element("Urun")
 
-        # Handle all children of <Urun>
         for tag in urun:
             if tag.tag in ['UrunAdi', 'Aciklama', 'MateryalBileseni'] and translate_this:
                 ET.SubElement(updated_urun, tag.tag).text = translate_text(tag.text or '')
-            elif tag.tag == "Resimler":
-                resimler_out = ET.SubElement(updated_urun, "Resimler")
-                for resim in tag.findall("Resim"):
-                    ET.SubElement(resimler_out, "Resim").text = resim.text
-            elif tag.tag == "UrunSecenek":
-                secenek_out = ET.SubElement(updated_urun, "UrunSecenek")
-                for secenek in tag.findall("Secenek"):
-                    new_secenek = ET.SubElement(secenek_out, "Secenek")
-                    for s_tag in secenek:
-                        if s_tag.tag in ["EkSecenekOzellik", "ozellik"] and translate_this:
-                            ET.SubElement(new_secenek, s_tag.tag).text = translate_text(s_tag.text or '')
-                        elif s_tag.tag == "SatisFiyati":
-                            try:
-                                price_try = float(s_tag.text)
-                                price_usd = round(price_try * usd_rate, 2)
-                                ET.SubElement(new_secenek, "SatisFiyati").text = str(price_usd)
-                            except Exception:
-                                ET.SubElement(new_secenek, "SatisFiyati").text = s_tag.text
-                        else:
-                            ET.SubElement(new_secenek, s_tag.tag).text = s_tag.text
+            elif tag.tag == 'Resimler':
+                resimler_out = ET.SubElement(updated_urun, 'Resimler')
+                for resim in tag.findall('Resim'):
+                    ET.SubElement(resimler_out, 'Resim').text = resim.text
             else:
                 ET.SubElement(updated_urun, tag.tag).text = tag.text
+
+        secenekler_in = urun.find("UrunSecenek")
+        if secenekler_in is not None:
+            secenek_out = ET.SubElement(updated_urun, "UrunSecenek")
+            for secenek in secenekler_in.findall("Secenek"):
+                new_secenek = ET.SubElement(secenek_out, "Secenek")
+                for s_tag in secenek:
+                    if s_tag.tag in ["EkSecenekOzellik", "ozellik"] and translate_this:
+                        ET.SubElement(new_secenek, s_tag.tag).text = translate_text(s_tag.text or '')
+                    elif s_tag.tag == "SatisFiyati":
+                        try:
+                            price_try = float(s_tag.text)
+                            price_usd = round(price_try * usd_rate, 2)
+                            ET.SubElement(new_secenek, "SatisFiyati").text = str(price_usd)
+                        except Exception:
+                            ET.SubElement(new_secenek, "SatisFiyati").text = s_tag.text
+                    else:
+                        ET.SubElement(new_secenek, s_tag.tag).text = s_tag.text
 
         if translate_this:
             updated_ids.add(varyasyon_id)
@@ -321,7 +322,10 @@ def process_and_save_translated_xml():
         new_urunler.append(updated_urun)
         processed_count += 1
 
-    # Preserve old untranslated products
+    if processed_count == 0:
+        print("[INFO] No new products translated.")
+        return
+
     for urun in urunler_out.findall("Urun"):
         varyasyon_id = urun.findtext("UrunSecenek/Secenek/VaryasyonID")
         if varyasyon_id not in updated_ids:
